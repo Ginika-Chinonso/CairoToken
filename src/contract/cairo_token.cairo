@@ -1,9 +1,10 @@
-#[contract]
+#[starknet::contract]
 mod cairo_token {
 
     use starknet::ContractAddress;
     use starknet::get_caller_address;
 
+    #[storage]
     struct Storage {
         owner: ContractAddress,
         name: felt252,
@@ -15,85 +16,85 @@ mod cairo_token {
     }
 
     #[constructor]
-    fn constructor(_name: felt252, _symbol: felt252, _decimal: u8, _total_supply: u256, _owner: ContractAddress) {
+    fn constructor(ref self: ContractState, _name: felt252, _symbol: felt252, _decimal: u8, _total_supply: u256, _owner: ContractAddress) {
 
-        name::write(_name);
-        symbol::write(_symbol);
-        decimal::write(_decimal);
-        owner::write(_owner);
+        self.name.write(_name);
+        self.symbol.write(_symbol);
+        self.decimal.write(_decimal);
+        self.owner.write(_owner);
 
-        mint(_owner, _total_supply)
+        self.mint(_owner, _total_supply)
     }
 
 
-    #[view]
-    fn get_name() -> felt252 {
-        name::read()
+    #[external(v0)]
+    #[generate_trait]
+    impl CairoTokenTraitImpl of CairoTokenTrait {
+
+        fn get_name(self: @ContractState) -> felt252 {
+            self.name.read()
+        }
+
+        fn get_owner(self: @ContractState) -> ContractAddress {
+            self.owner.read()
+        }
+
+        fn get_symbol(self: @ContractState) -> felt252 {
+            self.symbol.read()
+        }
+
+
+        fn get_totalSupply(self: @ContractState) -> u256 {
+            self.total_supply.read()
+        }
+
+        fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
+            assert(get_caller_address() == self.owner.read(), 'Invalid caller');
+            let new_total_supply = self.total_supply.read() + amount;
+            self.total_supply.write(new_total_supply);
+            let new_balance = self.balances.read(to) + amount;
+            self.balances.write(to, new_balance);
+        }
+
+        fn transfer(ref self: ContractState, to: ContractAddress, amount: u256){
+            let caller: ContractAddress = get_caller_address();
+            self._transfer(caller, to, amount);
+        }
+
+        fn transferFrom(ref self: ContractState, sender: ContractAddress, to: ContractAddress, amount: u256){
+            let caller = get_caller_address();
+            assert(self.allowances.read((sender, caller)) >= amount, 'No allowance');
+            self.allowances.write((sender, caller), self.allowances.read((sender, caller)) - amount);
+            self._transfer(sender, to, amount);
+        }
+
+
+        fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) {
+            let caller: ContractAddress = get_caller_address();
+            let mut prev_allowance: u256 = self.allowances.read((caller, spender));
+            self.allowances.write((caller, spender), prev_allowance + amount);
+        }
+
+
+        fn get_allowance(self: @ContractState, owner: ContractAddress, spender: ContractAddress) -> u256 {
+            self.allowances.read((owner, spender))
+        }
+
+        fn balanceOf(self: @ContractState, account: ContractAddress) -> u256 {
+            self.balances.read(account)
+        }
     }
 
-    #[view]
-    fn get_owner() -> ContractAddress {
-        owner::read()
-    }
 
-    #[view]
-    fn get_symbol() -> felt252 {
-        symbol::read()
-    }
+    #[generate_trait]
+    impl PrivateFunctions of CairoTokenPrivateFunctionsTrait {
 
-    #[view]
-    fn get_totalSupply() -> u256 {
-        total_supply::read()
-    }
+        fn _transfer(ref self: ContractState, sender: ContractAddress, recipient: ContractAddress, amount: u256) {
+            assert(self.balances.read(sender) >= amount, 'Insufficient bal');
+            self.balances.write(recipient, self.balances.read(recipient) + amount);
+            self.balances.write(sender, self.balances.read(sender) - amount)
+        }
 
-    #[external]
-    fn mint(to: ContractAddress, amount: u256) {
-        assert(get_caller_address() == owner::read(), 'Invalid caller');
-        let new_total_supply = total_supply::read() + amount;
-        total_supply::write(new_total_supply);
-        let new_balance = balances::read(to) + amount;
-        balances::write(to, new_balance);
-    }
-
-    #[external]
-    fn transfer(to: ContractAddress, amount: u256){
-        let caller: ContractAddress = get_caller_address();
-        _transfer(caller, to, amount);
-    }
-
-    #[internal]
-    fn _transfer(sender: ContractAddress, recipient: ContractAddress, amount: u256) {
-        assert(balances::read(sender) >= amount, 'Insufficient bal');
-        balances::write(recipient, balances::read(recipient) + amount);
-        balances::write(sender, balances::read(sender) - amount);
-    }
-
-
-    #[external]
-    fn transferFrom(sender: ContractAddress, to: ContractAddress, amount: u256){
-        let caller = get_caller_address();
-        assert(allowances::read((sender, caller)) >= amount, 'No allowance');
-        allowances::write((sender, caller), allowances::read((sender, caller)) - amount);
-        _transfer(sender, to, amount);
-    }
-
-
-    #[external]
-    fn approve(spender: ContractAddress, amount: u256) {
-        let caller: ContractAddress = get_caller_address();
-        let mut prev_allowance: u256 = allowances::read((caller, spender));
-        allowances::write((caller, spender), prev_allowance + amount);
-    }
-
-
-    #[external]
-    fn get_allowance(owner: ContractAddress, spender: ContractAddress) -> u256 {
-        allowances::read((owner, spender))
-    }
-
-    #[external]
-    fn balanceOf(account: ContractAddress) -> u256 {
-        balances::read(account)
     }
 
 }
